@@ -1,21 +1,6 @@
 name: Get Hot News
 
 on:
-  schedule:
-    # 📝 GitHub Actions cron 使用 UTC 时间，下面按 config/timeline.yaml 的
-    #    custom「量化选股」北京时间窗口安排：
-    #    - 盘前：08:17、09:17（多一次备份，once 防重复推送）
-    #    - 盘中：09:47、10:47、11:47、13:47、14:47（增量推送）
-    #    - 盘后：15:17、16:17、17:17（多次备份，once 防重复推送）
-    #    - 周末：早间窗口复用盘前/盘中触发点，晚间 18:17、20:17
-    #      （由 timeline 决定是否推送，once 防重复）
-    #    - 夜间：23:17、01:17、03:17、05:17（采集/分析，不推送）
-    #
-    #    不在 cron 中限制星期，避免 UTC 与 Asia/Shanghai 日期边界错位；
-    #    工作日/周末差异由 timeline.yaml 的 week_map 统一判断。
-    - cron: "17 0,1,7,8,9,10,12,15,17,19,21 * * *"
-    - cron: "47 1,2,3,5,6 * * *"
-
   workflow_dispatch:
 
 concurrency:
