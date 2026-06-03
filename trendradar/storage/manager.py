@@ -94,15 +94,13 @@ class StorageManager:
     def _resolve_backend_type(self) -> str:
         """解析实际使用的后端类型"""
         if self.backend_type == "auto":
-            if self.is_github_actions():
-                # GitHub Actions 环境，检查是否配置了远程存储
-                if self._has_remote_config():
-                    return "remote"
-                else:
-                    print("[存储管理器] GitHub Actions 环境但未配置远程存储，使用本地存储")
-                    return "local"
-            else:
-                return "local"
+            if self._has_remote_config():
+                print("[存储管理器] auto 模式检测到远程存储配置，使用远程存储")
+                return "remote"
+
+            if self.is_github_actions() or self.is_docker():
+                print("[存储管理器] auto 模式未配置远程存储，使用本地存储")
+            return "local"
         return self.backend_type
 
     def _has_remote_config(self) -> bool:

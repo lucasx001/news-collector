@@ -267,7 +267,7 @@ notification:
 # ===============================================================
 storage:
   # 存储后端选择
-  # - auto: 自动选择（GitHub Actions 且配置了远程存储 → remote，否则 → local）
+  # - auto: 自动选择（配置了远程存储 → remote，否则 → local）
   # - local: 本地 SQLite + TXT/HTML 文件
   # - remote: 远程云存储（S3 兼容协议，支持 R2/OSS/COS 等）
   backend: "auto"
