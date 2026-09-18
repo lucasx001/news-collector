@@ -274,6 +274,38 @@ class RemoteStateTests(unittest.TestCase):
 
 
 class StrictFilterTests(unittest.TestCase):
+    def test_tag_extraction_uses_json_mode_and_retries_empty_response(self):
+        selector = AIFilter.__new__(AIFilter)
+        selector.client = Mock()
+        selector.client.model = "deepseek/deepseek-flash"
+        selector.extract_system = ""
+        selector.extract_user = "{interests_content}"
+        selector.debug = False
+        selector.client.chat.side_effect = [
+            "",
+            '{"tags":[{"tag":"宏观经济","description":"政策与数据"}]}',
+        ]
+        self.assertEqual(
+            selector.extract_tags("关注政策与宏观经济"),
+            [{"tag": "宏观经济", "description": "政策与数据"}],
+        )
+        first_kwargs = selector.client.chat.call_args_list[0].kwargs
+        self.assertEqual(first_kwargs["response_format"], {"type": "json_object"})
+        self.assertEqual(first_kwargs["extra_body"], {"thinking": {"type": "disabled"}})
+
+    def test_tag_parser_accepts_json_variants_and_surrounding_text(self):
+        selector = AIFilter.__new__(AIFilter)
+        self.assertEqual(
+            selector._parse_tags_response(
+                '先说明一下：{"labels":[{"name":"宏观经济","summary":"政策与数据"}]}'
+            ),
+            [{"tag": "宏观经济", "description": "政策与数据"}],
+        )
+        self.assertEqual(
+            selector._parse_tags_response('[{"tag":"科技","description":"AI 与芯片"}]'),
+            [{"tag": "科技", "description": "AI 与芯片"}],
+        )
+
     def test_invalid_response_raises_and_empty_array_is_valid(self):
         selector = AIFilter.__new__(AIFilter)
         selector.client = Mock()

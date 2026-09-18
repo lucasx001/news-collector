@@ -64,6 +64,13 @@ class AIFilter:
             config_subdir="ai_filter", label="AI筛选",
         )
 
+    def _structured_chat_options(self) -> Dict[str, Any]:
+        """返回结构化输出参数，并为 DeepSeek 关闭默认思考模式。"""
+        options: Dict[str, Any] = {"response_format": {"type": "json_object"}}
+        if str(getattr(self.client, "model", "")).lower().startswith("deepseek/"):
+            options["extra_body"] = {"thinking": {"type": "disabled"}}
+        return options
+
     def compute_interests_hash(self, interests_content: str, filename: str = "ai_interests.txt") -> str:
         """计算兴趣描述的 hash，格式为 filename:md5"""
         # 去除前后空白和注释行，确保内容变化才改变 hash
@@ -145,7 +152,13 @@ class AIFilter:
             print(f"[AI筛选][DEBUG] === Prompt 结束 ===")
 
         try:
-            response = self.client.chat(messages)
+            # 标签提取是严格的结构化任务。DeepSeek V4.1-Flash 默认开启
+            # thinking，且 JSON Output 偶尔会返回空 content；关闭 thinking 并
+            # 显式请求 JSON 可以减少空响应和夹杂自然语言的情况。
+            response = self.client.chat(
+                messages,
+                **self._structured_chat_options(),
+            )
 
             if self.debug:
                 print(f"\n[AI筛选][DEBUG] === 标签提取 AI 原始响应 ===")
@@ -154,7 +167,26 @@ class AIFilter:
                 print(f"[AI筛选][DEBUG] === 响应结束 ===")
 
             tags = self._parse_tags_response(response)
+            if not tags:
+                # DeepSeek JSON Output 偶尔会返回空内容。重试一次，避免把临时
+                # 空响应当成永久无标签。
+                retry_messages = list(messages)
+                retry_messages.append({
+                    "role": "user",
+                    "content": "请重新输出非空 JSON：至少返回 5 个与用户兴趣相关的 tags。",
+                })
+                retry_response = self.client.chat(
+                    retry_messages,
+                    **self._structured_chat_options(),
+                )
+                retry_tags = self._parse_tags_response(retry_response)
+                if retry_tags:
+                    response = retry_response
+                    tags = retry_tags
             print(f"[AI筛选] 提取到 {len(tags)} 个标签")
+            if not tags:
+                preview = (response or "").replace("\n", " ")[:300]
+                print(f"[AI筛选] AI 返回中没有有效 tags 字段，响应前 300 字符: {preview!r}")
             for t in tags:
                 print(f"   {t['tag']}: {t.get('description', '')}")
 
@@ -164,7 +196,12 @@ class AIFilter:
                     print(f"[AI筛选][DEBUG] 无法从响应中提取 JSON")
                 else:
                     raw_data = json.loads(json_str)
-                    raw_tags = raw_data.get("tags", [])
+                    if isinstance(raw_data, dict):
+                        raw_tags = raw_data.get("tags", [])
+                    elif isinstance(raw_data, list):
+                        raw_tags = raw_data
+                    else:
+                        raw_tags = []
                     skipped = len(raw_tags) - len(tags)
                     if skipped > 0:
                         print(f"[AI筛选][DEBUG] 原始标签 {len(raw_tags)} 个，有效 {len(tags)} 个，跳过 {skipped} 个（缺少 tag 字段或格式无效）")
@@ -295,16 +332,35 @@ class AIFilter:
             return []
 
         data = json.loads(json_str)
-        tags_raw = data.get("tags", [])
+        if isinstance(data, list):
+            tags_raw = data
+        elif isinstance(data, dict):
+            tags_raw = []
+            for key in ("tags", "labels", "categories", "topics", "items"):
+                candidate = data.get(key)
+                if isinstance(candidate, list):
+                    tags_raw = candidate
+                    break
+            # 兼容模型直接返回单个标签对象的情况。
+            if not tags_raw and any(key in data for key in ("tag", "name", "label", "category")):
+                tags_raw = [data]
+        else:
+            tags_raw = []
 
         tags = []
         for t in tags_raw:
-            if not isinstance(t, dict) or "tag" not in t:
+            if isinstance(t, str):
+                tag = t.strip()
+                description = ""
+            elif isinstance(t, dict):
+                tag = next((t.get(key) for key in ("tag", "name", "label", "category") if t.get(key)), "")
+                description = next((t.get(key) for key in ("description", "desc", "summary") if t.get(key)), "")
+                tag = str(tag).strip()
+                description = str(description).strip()
+            else:
                 continue
-            tags.append({
-                "tag": str(t["tag"]).strip(),
-                "description": str(t.get("description", "")).strip(),
-            })
+            if tag:
+                tags.append({"tag": tag, "description": description})
 
         return tags
 
@@ -559,7 +615,21 @@ class AIFilter:
                 json_str = parts[1]
 
         json_str = json_str.strip()
-        return json_str if json_str else None
+        if not json_str:
+            return None
+
+        # 模型有时会在 JSON 前后附带解释或思考文本。使用 JSONDecoder 从
+        # 第一个可解析的对象/数组开始提取，避免整段文本导致解析失败。
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(json_str):
+            if char not in "[{":
+                continue
+            try:
+                _, end = decoder.raw_decode(json_str[index:])
+                return json_str[index:index + end]
+            except json.JSONDecodeError:
+                continue
+        return json_str
 
     def _print_formatted_json(self, response: str) -> None:
         """格式化打印 AI 响应中的 JSON，便于 debug 阅读"""
