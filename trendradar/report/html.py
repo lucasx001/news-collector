@@ -1265,7 +1265,9 @@ def render_html_content(
                         <span class="info-value">"""
 
     # 处理报告类型显示（根据 mode 直接显示）
-    if mode == "current":
+    if report_data.get("briefing_title"):
+        html += html_escape(report_data["briefing_title"])
+    elif mode == "current":
         html += "当前榜单"
     elif mode == "incremental":
         html += "增量分析"

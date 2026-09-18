@@ -567,6 +567,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
     # 统一调度配置
     config["SCHEDULE"] = _load_schedule_config(config_data)
+    config["BRIEFING"] = config_data.get("briefing", {"enabled": False})
     config["_TIMELINE_DATA"] = _load_timeline_data(
         str(Path(config_path).parent) if config_path else "config"
     )

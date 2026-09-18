@@ -9,6 +9,7 @@ AI 智能筛选模块
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -312,6 +313,7 @@ class AIFilter:
         titles: List[Dict],
         tags: List[Dict],
         interests_content: str = "",
+        strict: bool = False,
     ) -> List[Dict]:
         """
         阶段 B：对一批新闻标题做分类
@@ -328,6 +330,8 @@ class AIFilter:
             return []
 
         if not self.classify_user:
+            if strict:
+                raise ValueError("AI 分类提示词模板为空")
             print("[AI筛选] 分类提示词模板为空")
             return []
 
@@ -377,8 +381,26 @@ class AIFilter:
         try:
             response = self.client.chat(messages)
 
+            if strict:
+                # A failed response must not be interpreted as "nothing matched".
+                raw = self._extract_json(response)
+                parsed = json.loads(raw) if raw else None
+                if not isinstance(parsed, list):
+                    raise ValueError("AI 分类响应不是 JSON 数组")
+                title_ids = {t["id"] for t in titles}
+                tag_ids = {t["id"] for t in tags}
+                for item in parsed:
+                    if (not isinstance(item, dict) or item.get("id") not in title_ids
+                            or item.get("tag_id") not in tag_ids):
+                        raise ValueError("AI 分类响应包含无效新闻或标签")
+                    score = float(item["score"])
+                    if not math.isfinite(score) or not 0 <= score <= 1:
+                        raise ValueError("AI 分类分数无效")
+
             return self._parse_classify_response(response, titles, tags)
         except Exception as e:
+            if strict:
+                raise
             print(f"[AI筛选] 分类请求失败: {type(e).__name__}: {e}")
             return []
 

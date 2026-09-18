@@ -396,129 +396,43 @@ presets:
 #     晚间汇总 19:00-21:00：推送 ✓ | 分析 ✓ | daily
 #     其余时间走默认配置（静默采集）
 
+# 每天相同安排（北京时间），窗口供运行延迟及失败重试使用。
+# 每个窗口成功后只发一次，失败保留快照；其余时间仅采集。
 custom:
-  name: "量化选股"
-  description: "盘前简报 + 盘中增量速递 + 盘后复盘汇总，量化交易定制。"
-
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  # 默认配置 ── 不在任何时间段内时静默采集
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  name: "A股早晚简报"
+  description: "08:00 汇总隔夜，20:00 汇总白天；同源去重，跨来源保留。"
   default:
     collect: true
-    analyze: false                 # 静默期不跑 AI，省 API
-    ai_mode: "current"
-    push: false                    # 静默期不推送
-    report_mode: "incremental"
+    analyze: false
+    push: false
+    report_mode: "daily"
+    ai_mode: "follow_report"
     once:
       analyze: true
       push: true
-
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  # 时间段定义
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   periods:
-
-    night_quiet:
-      name: "夜间静默"
-      start: "22:00"
-      end: "06:00"                 # 跨日：22:00 → 次日 06:00
-      collect: true                # 继续采集，积累隔夜数据
-      analyze: true                # 夜间跑 AI 分析（不推送，不打扰）
-      push: false
-
-    pre_market:
-      name: "盘前简报"
+    morning:
+      name: "早间简报"
       start: "08:00"
-      end: "09:30"
+      end: "09:00"
       analyze: true
-      ai_mode: "daily"             # AI 汇总隔夜消息
       push: true
-      report_mode: "daily"         # 当日汇总，为开盘做准备
-      # once 继承 default → 只推/分析一次
-
-    intraday:
-      name: "盘中速递"
-      start: "09:30"
-      end: "15:00"
+    evening:
+      name: "晚间简报"
+      start: "20:00"
+      end: "21:00"
       analyze: true
-      ai_mode: "current"           # AI 分析当前热点
       push: true
-      report_mode: "incremental"   # 只推新增，不重复
-      once:
-        analyze: true              # 盘中只分析一次，省 API
-        push: false                # 有新增就推，不限制次数
-
-    after_market:
-      name: "盘后复盘"
-      start: "15:00"
-      end: "18:00"
-      analyze: true
-      ai_mode: "daily"             # AI 全天汇总分析
-      push: true
-      report_mode: "daily"         # 当日完整复盘
-      # once 继承 default → 只推/分析一次
-
-    weekend_briefing:
-      name: "周末早报"
-      start: "08:00"
-      end: "12:00"
-      analyze: true
-      ai_mode: "daily"
-      push: true
-      report_mode: "daily"         # 早间汇总
-      # once 继承 default → 只推/分析一次
-
-    weekend_evening:
-      name: "周末晚间"
-      start: "18:00"
-      end: "22:00"
-      push: true
-      report_mode: "incremental"   # 新增才推
-      once:
-        analyze: false
-        push: false                # 有新增就推，不限制
-
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  # 日计划
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   day_plans:
-    workday:
-      periods: ["night_quiet", "pre_market", "intraday", "after_market"]
-    weekend:
-      periods: ["night_quiet", "weekend_briefing", "weekend_evening"]
-
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  # 周映射（1=周一 ... 7=周日）
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    everyday:
+      periods: ["morning", "evening"]
   week_map:
-    1: "workday"
-    2: "workday"
-    3: "workday"
-    4: "workday"
-    5: "workday"
-    6: "weekend"
-    7: "weekend"
-
-
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  # 冲突策略（一般不用改）
-  #
-  # 什么是「冲突」？
-  #   如果你的两个时间段有重叠（比如 A 是 08:00-12:00，B 是 10:00-14:00），
-  #   那么 10:00-12:00 这段时间就同时属于 A 和 B，产生了冲突。
-  #   此时程序需要知道：到底听谁的？
-  #
-  # 两种处理方式：
-  #
-  #   error_on_overlap（推荐）
-  #     直接报错，提醒你去修改配置。
-  #     适合大多数人 —— 时间段重叠通常是写错了，报错能及时发现。
-  #
-  #   last_wins
-  #     day_plans 的 periods 列表中，写在后面的优先。
-  #     比如 periods: ["A", "B"]，重叠时 B 生效。
-  #     适合场景：你想用一个大范围时间段打底，再用后面的小范围覆盖。
-  #
-  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    1: "everyday"
+    2: "everyday"
+    3: "everyday"
+    4: "everyday"
+    5: "everyday"
+    6: "everyday"
+    7: "everyday"
   overlap:
     policy: "error_on_overlap"

@@ -1082,6 +1082,8 @@ class NewsAnalyzer:
         # 保存到存储后端（SQLite）
         if self.storage_manager.save_news_data(news_data):
             print(f"数据已保存到存储后端: {self.storage_manager.backend_name}")
+        elif self.ctx.config.get("BRIEFING", {}).get("enabled", False):
+            raise RuntimeError("新闻存储失败，本轮简报停止，等待下次重试")
 
         # 保存 TXT 快照（如果启用）
         txt_file = self.storage_manager.save_txt_snapshot(news_data)
@@ -1713,6 +1715,11 @@ class NewsAnalyzer:
             if not self._initialize_and_check_config():
                 return
 
+            if self.ctx.config.get("BRIEFING", {}).get("enabled", False):
+                from trendradar.core.briefing import BriefingRunner
+                BriefingRunner(self).run()
+                return
+
             mode_strategy = self._get_mode_strategy()
 
             # 抓取热榜数据
@@ -1730,7 +1737,7 @@ class NewsAnalyzer:
 
         except Exception as e:
             print(f"分析流程执行出错: {e}")
-            if self.ctx.config.get("DEBUG", False):
+            if self.ctx.config.get("DEBUG", False) or self.ctx.config.get("BRIEFING", {}).get("enabled", False):
                 raise
         finally:
             # 清理资源（包括过期数据清理和数据库连接关闭）
