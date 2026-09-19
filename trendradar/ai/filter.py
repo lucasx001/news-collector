@@ -71,6 +71,21 @@ class AIFilter:
             options["extra_body"] = {"thinking": {"type": "disabled"}}
         return options
 
+    @staticmethod
+    def _classify_items(data: Any) -> Optional[List[Dict]]:
+        """把分类响应统一成记录数组，兼容 JSON 对象和旧版数组。"""
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for key in ("matches", "results", "classifications", "items", "data"):
+                candidate = data.get(key)
+                if isinstance(candidate, list):
+                    return candidate
+            # 兼容模型直接返回单条分类记录。
+            if "id" in data and ("tag_id" in data or "tags" in data):
+                return [data]
+        return None
+
     def compute_interests_hash(self, interests_content: str, filename: str = "ai_interests.txt") -> str:
         """计算兴趣描述的 hash，格式为 filename:md5"""
         # 去除前后空白和注释行，确保内容变化才改变 hash
@@ -435,17 +450,21 @@ class AIFilter:
             print(f"[AI筛选][DEBUG] === Prompt 结束 (长度: {sum(len(m['content']) for m in messages)} 字符) ===")
 
         try:
-            response = self.client.chat(messages)
+            response = self.client.chat(
+                messages,
+                **self._structured_chat_options(),
+            )
 
             if strict:
                 # A failed response must not be interpreted as "nothing matched".
                 raw = self._extract_json(response)
                 parsed = json.loads(raw) if raw else None
-                if not isinstance(parsed, list):
-                    raise ValueError("AI 分类响应不是 JSON 数组")
+                parsed_items = self._classify_items(parsed)
+                if parsed_items is None:
+                    raise ValueError("AI 分类响应不是有效的 JSON 分类结果")
                 title_ids = {t["id"] for t in titles}
                 tag_ids = {t["id"] for t in tags}
-                for item in parsed:
+                for item in parsed_items:
                     if (not isinstance(item, dict) or item.get("id") not in title_ids
                             or item.get("tag_id") not in tag_ids):
                         raise ValueError("AI 分类响应包含无效新闻或标签")
@@ -468,8 +487,9 @@ class AIFilter:
     ) -> List[Dict]:
         """解析分类的 AI 响应
 
-        支持两种 JSON 格式：
-        - 新格式（扁平）: [{"id": 1, "tag_id": 1, "score": 0.9}, ...]
+        支持 JSON 数组及对象包装格式：
+        - 扁平数组/对象: [{"id": 1, "tag_id": 1, "score": 0.9}, ...]
+        - 对象包装: {"matches": [{"id": 1, "tag_id": 1, "score": 0.9}, ...]}
         - 旧格式（嵌套）: [{"id": 1, "tags": [{"tag_id": 1, "score": 0.9}]}, ...]
 
         每条新闻只保留一个最高分的 tag，杜绝同一条出现在多个标签下。
@@ -488,9 +508,10 @@ class AIFilter:
                 print(f"[AI筛选][DEBUG] 提取的 JSON 文本前 500 字符: {json_str[:500]}")
             return []
 
-        if not isinstance(data, list):
+        data = self._classify_items(data)
+        if data is None:
             if self.debug:
-                print(f"[AI筛选][DEBUG] 分类响应顶层不是数组，实际类型: {type(data).__name__}")
+                print("[AI筛选][DEBUG] 分类响应不是数组或可识别的 JSON 对象")
             return []
 
         # 构建 id 映射

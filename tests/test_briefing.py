@@ -319,6 +319,11 @@ class StrictFilterTests(unittest.TestCase):
             selector.classify_batch(titles, tags, strict=True)
         selector.client.chat.return_value = "[]"
         self.assertEqual(selector.classify_batch(titles, tags, strict=True), [])
+        selector.client.chat.return_value = '{"matches":[{"id":0,"tag_id":1,"score":0.9}]}'
+        self.assertEqual(
+            selector.classify_batch(titles, tags, strict=True),
+            [{"news_item_id": 0, "tag_id": 1, "relevance_score": 0.9}],
+        )
 
 
 if __name__ == "__main__":
