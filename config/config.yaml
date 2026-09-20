@@ -44,6 +44,9 @@ schedule:
 # 当前仅处理 platforms；关闭后恢复原有 report/schedule 流程。
 briefing:
   enabled: true
+  curation_enabled: true # 分类后比较信息价值，宁缺毋滥
+  max_per_topic: 2 # 每个主题最多 2 条
+  max_total: 12 # 每份早晚简报最多 12 条
 
 # ===============================================================
 # 2. 数据源 - 热榜平台
@@ -60,8 +63,8 @@ platforms:
       name: "财联社电报"
     - id: "cls-depth"
       name: "财联社深度"
-    - id: "wallstreetcn-quick"
-      name: "华尔街见闻快讯"
+    - id: "wallstreetcn-news"
+      name: "华尔街见闻文章"
     - id: "gelonghui"
       name: "格隆汇"
     - id: "thepaper"

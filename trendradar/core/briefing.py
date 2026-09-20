@@ -14,6 +14,7 @@ from pathlib import Path
 
 from trendradar.ai import AIAnalyzer, AIAnalysisResult
 from trendradar.ai.filter import AIFilter
+from trendradar.ai.curation import curate_stats
 from trendradar.core.config import parse_multi_account_config, get_account_at_index
 from trendradar.notification.dispatcher import NotificationDispatcher
 from trendradar.storage.briefing import BriefingStateStore
@@ -238,6 +239,18 @@ class BriefingRunner:
             flight = self.state["flight"]
             if flight["stats"] is None:
                 flight["stats"] = self._build_stats([self.state["pending"][k] for k in flight["keys"]])
+                self._save()
+            curated = self.config.get("BRIEFING", {})
+            if (curated.get("curation_enabled", False) and not flight.get("curated")
+                    and not flight["delivered"]):
+                selector = AIFilter(self.config["AI"], self.ctx.ai_filter_config, self.ctx.get_time)
+                flight["stats"] = curate_stats(
+                    flight["stats"], selector,
+                    per_topic=curated.get("max_per_topic", 2),
+                    total=curated.get("max_total", 12), heartbeat=self._save,
+                )
+                flight["analysis"] = None
+                flight["curated"] = True
                 self._save()
             if flight["stats"]:
                 self._deliver(flight, targets, schedule)

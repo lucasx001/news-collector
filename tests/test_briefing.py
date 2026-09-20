@@ -70,6 +70,7 @@ class BriefingTests(unittest.TestCase):
         os.chdir(self.temp.name)
         self.addCleanup(os.chdir, self.previous)
         self.config = copy.deepcopy(self.base_config)
+        self.config["BRIEFING"]["curation_enabled"] = False
         self.config["PLATFORMS"] = [{"id": "a", "name": "来源A"}, {"id": "b", "name": "来源B"}]
         self.config["AI_ANALYSIS"]["ENABLED"] = False
         for keys in CHANNEL_KEYS.values():
@@ -250,6 +251,22 @@ class BriefingTests(unittest.TestCase):
         self.run_at("2026-09-19T08:30")
         self.assertFalse(self.sent)
         self.assertIsNotNone(self.state()["flight"])
+
+    def test_curation_failure_preserves_snapshot_then_retries(self):
+        self.config["BRIEFING"]["curation_enabled"] = True
+        self.run_at("2026-09-18T21:00", self.item())
+        with patch("trendradar.core.briefing.curate_stats", side_effect=ValueError("bad selection")):
+            with self.assertRaisesRegex(ValueError, "bad selection"):
+                self.run_at("2026-09-19T08:00")
+        self.assertTrue(self.state()["pending"])
+        self.assertFalse(self.state()["seen"])
+        self.assertFalse(self.sent)
+        with patch("trendradar.core.briefing.curate_stats", side_effect=lambda stats, *a, **k: stats) as select:
+            self.run_at("2026-09-19T08:30")
+            select.assert_called_once()
+        self.assertEqual(len(self.sent), 2)
+        self.assertEqual(self.build.call_count, 1)
+        self.assertIsNone(self.state()["flight"])
 
     def test_main_routes_briefing_without_old_pipeline(self):
         from trendradar.__main__ import NewsAnalyzer
