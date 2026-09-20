@@ -45,7 +45,7 @@ schedule:
 briefing:
   enabled: true
   curation_enabled: true # 分类后比较信息价值，宁缺毋滥
-  max_per_topic: 2 # 每个主题最多 2 条
+  max_per_topic: 5 # 每个主题最多 5 条
   max_total: 12 # 每份早晚简报最多 12 条
 
 # ===============================================================
@@ -204,18 +204,18 @@ display:
     - new_items # 1️⃣ 新增热点区域
     - hotlist # 2️⃣ 热榜区域（关键词匹配 / AI 智能筛选）
     - rss # 3️⃣ RSS 订阅区域
-    - standalone # 4️⃣ 独立展示区
-    - ai_analysis # 5️⃣ AI 分析区域
+    - ai_analysis # AI 精选总结
+    - standalone # 最后附完整平台热榜
   regions:
     new_items: false # 新增热点区域：含热榜新增 + RSS 新增（true=显示, false=隐藏）
     hotlist: true # 热榜区域：关键词匹配 / AI 智能筛选（true=显示, false=隐藏）
     rss: false # RSS 订阅区域（true=显示并分析, false=隐藏并跳过分析）
-    standalone: false # 独立展示区：完整热榜/RSS，不受关键词过滤（true=显示, false=隐藏）
+    standalone: true # 完整热榜，不受 AI 精选条数限制
     ai_analysis: true # AI 分析区域（true=显示, false=隐藏）
   standalone:
-    platforms: [] # 简报统一处理，关闭独立展示区
+    platforms: [cls-hot, wallstreetcn-hot, thepaper, ithome]
     rss_feeds: []
-    max_items: 20 # 每个源最多展示条数（0=不限制）
+    max_items: 0 # 展示接口返回的完整榜单，不截断
 
 # ===============================================================
 # 6. 推送通知

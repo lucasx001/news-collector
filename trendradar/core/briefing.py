@@ -15,6 +15,7 @@ from pathlib import Path
 from trendradar.ai import AIAnalyzer, AIAnalysisResult
 from trendradar.ai.filter import AIFilter
 from trendradar.ai.curation import curate_stats
+from trendradar.crawler.fetcher import DataFetcher
 from trendradar.core.config import parse_multi_account_config, get_account_at_index
 from trendradar.notification.dispatcher import NotificationDispatcher
 from trendradar.storage.briefing import BriefingStateStore
@@ -223,9 +224,10 @@ class BriefingRunner:
                 print("[简报] 未配置通知渠道，保留待推送新闻")
                 return
             if self.state["flight"] is None:
+                standalone = self._standalone_snapshot()
                 keys = [key for key, item in self.state["pending"].items()
                         if datetime.fromisoformat(item["first_seen"]) <= cutoff]
-                if not keys:
+                if not keys and not standalone:
                     print("[简报] 本时段没有新增新闻")
                     return
                 start = self.state["since"]
@@ -234,11 +236,12 @@ class BriefingRunner:
                     "keys": keys, "cutoff": slot, "label": label,
                     "stats": None, "analysis": None, "delivered": [],
                     "failed_ids": failed,
+                    "standalone": standalone,
                 }
                 self._save()
             flight = self.state["flight"]
             if flight["stats"] is None:
-                flight["stats"] = self._build_stats([self.state["pending"][k] for k in flight["keys"]])
+                flight["stats"] = self._build_stats([self.state["pending"][k] for k in flight["keys"]]) if flight["keys"] else []
                 self._save()
             curated = self.config.get("BRIEFING", {})
             if (curated.get("curation_enabled", False) and not flight.get("curated")
@@ -252,7 +255,7 @@ class BriefingRunner:
                 flight["analysis"] = None
                 flight["curated"] = True
                 self._save()
-            if flight["stats"]:
+            if flight["stats"] or flight.get("standalone"):
                 self._deliver(flight, targets, schedule)
                 if not all(target[0] in flight["delivered"] for target in targets):
                     print("[简报] 部分推送未成功，保留快照，下次窗口内重试失败的接收方")
@@ -268,6 +271,40 @@ class BriefingRunner:
             self._save()
         finally:
             self._save(release=True)
+
+    def _standalone_snapshot(self):
+        """Fetch current boards only at delivery time and freeze them for retries."""
+        display = self.config.get("DISPLAY", {})
+        if not display.get("REGIONS", {}).get("STANDALONE", False):
+            return None
+        settings = display.get("STANDALONE", {})
+        sources = settings.get("PLATFORMS", [])
+        if not sources:
+            return None
+        names = {"cls-hot": "财联社热门", "wallstreetcn-hot": "华尔街见闻热门",
+                 "thepaper": "澎湃新闻"}
+        names.update({p["id"]: p.get("name", p["id"]) for p in self.config["PLATFORMS"]})
+        results, source_names, failed = DataFetcher(self.analyzer.proxy_url).crawl_websites(
+            [(source, names.get(source, source)) for source in dict.fromkeys(sources)],
+            request_interval=self.config.get("REQUEST_INTERVAL", 2000),
+        )
+        if failed:
+            raise RuntimeError(f"独立热榜获取失败，保留简报等待重试: {', '.join(failed)}")
+        boards = []
+        limit = settings.get("MAX_ITEMS", 0)
+        stamp = self.ctx.get_time().strftime("%m-%d %H:%M")
+        for source in dict.fromkeys(sources):
+            items = [{"title": title, "url": info.get("url", ""),
+                      "mobileUrl": info.get("mobileUrl", ""),
+                      "ranks": info.get("ranks", []), "count": 1,
+                      "first_time": stamp, "last_time": stamp}
+                     for title, info in results.get(source, {}).items()]
+            if limit > 0:
+                items = items[:limit]
+            if items:
+                boards.append({"id": source, "name": source_names.get(source, source), "items": items})
+        print(f"[独立热榜] 已获取 {len(boards)} 个平台，共 {sum(len(b['items']) for b in boards)} 条（不经AI精选）")
+        return {"platforms": boards, "rss_feeds": []} if boards else None
 
     def _build_stats(self, items):
         if self.ctx.filter_method == "ai":
@@ -321,7 +358,7 @@ class BriefingRunner:
 
     def _deliver(self, flight, targets, schedule):
         stats = flight["stats"]
-        if (flight["analysis"] is None and schedule.analyze
+        if (stats and flight["analysis"] is None and schedule.analyze
                 and self.config.get("AI_ANALYSIS", {}).get("ENABLED", False)):
             analysis_config = dict(self.config["AI_ANALYSIS"], MODE="follow_report")
             result = AIAnalyzer(self.config["AI"], analysis_config, self.ctx.get_time).analyze(
@@ -337,7 +374,8 @@ class BriefingRunner:
         report_data = self.ctx.prepare_report(stats, flight["failed_ids"], {}, {}, "daily")
         report_data["briefing_title"] = flight["label"]
         total = sum(s["count"] for s in stats)
-        html_content = self.ctx.render_html(report_data, total, "daily", ai_analysis=ai)
+        html_content = self.ctx.render_html(report_data, total, "daily", ai_analysis=ai,
+                                            standalone_data=flight.get("standalone"))
         html_dir = Path("output/html/briefings")
         html_dir.mkdir(parents=True, exist_ok=True)
         filename = datetime.fromisoformat(flight["cutoff"]).strftime("%Y-%m-%d_%H-%M.html")
@@ -362,6 +400,7 @@ class BriefingRunner:
             results = dispatcher.dispatch_all(
                 report_data=report_data, report_type=flight["label"], mode="daily",
                 html_file_path=str(html_path), ai_analysis=ai, proxy_url=self.analyzer.proxy_url,
+                standalone_data=flight.get("standalone"),
             )
             if results.get(channel):
                 flight["delivered"].append(target_id)

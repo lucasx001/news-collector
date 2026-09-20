@@ -71,6 +71,7 @@ class BriefingTests(unittest.TestCase):
         self.addCleanup(os.chdir, self.previous)
         self.config = copy.deepcopy(self.base_config)
         self.config["BRIEFING"]["curation_enabled"] = False
+        self.config["DISPLAY"]["REGIONS"]["STANDALONE"] = False
         self.config["PLATFORMS"] = [{"id": "a", "name": "来源A"}, {"id": "b", "name": "来源B"}]
         self.config["AI_ANALYSIS"]["ENABLED"] = False
         for keys in CHANNEL_KEYS.values():
@@ -267,6 +268,53 @@ class BriefingTests(unittest.TestCase):
         self.assertEqual(len(self.sent), 2)
         self.assertEqual(self.build.call_count, 1)
         self.assertIsNone(self.state()["flight"])
+
+    def test_standalone_full_board_without_selected_news_and_retry_snapshot(self):
+        self.config["DISPLAY"]["REGIONS"]["STANDALONE"] = True
+        self.config["DISPLAY"]["STANDALONE"] = {
+            "PLATFORMS": ["cls-hot"], "MAX_ITEMS": 0,
+        }
+        self.failed_destinations = {"https://test.invalid/two"}
+        board = {f"榜单新闻{i}": {"url": f"https://www.cls.cn/detail/{i}", "ranks": [i]}
+                 for i in range(1, 31)}
+        with patch("trendradar.core.briefing.DataFetcher") as fetcher:
+            fetcher.return_value.crawl_websites.return_value = (
+                {"cls-hot": board}, {"cls-hot": "财联社热门"}, [])
+            self.run_at("2026-09-18T21:00")
+            fetcher.assert_not_called()
+            self.run_at("2026-09-19T08:00")
+            first = copy.deepcopy(self.sent[0][1]["standalone_data"])
+            self.assertEqual(len(first["platforms"][0]["items"]), 30)
+            from trendradar.notification.splitter import split_content_into_batches
+            batches = split_content_into_batches(
+                self.sent[0][1]["report_data"], "wework", max_bytes=1500,
+                standalone_data=first, region_order=["hotlist", "ai_analysis", "standalone"],
+            )
+            self.assertGreater(len(batches), 1)
+            for i in range(1, 31):
+                self.assertIn(f"[榜单新闻{i}]", "".join(batches))
+            self.assertTrue(all(len(batch.encode("utf-8")) <= 1500 for batch in batches))
+            self.assertFalse(self.sent[0][1]["report_data"]["stats"])
+            self.failed_destinations.clear()
+            self.run_at("2026-09-19T08:30")
+            self.assertEqual(self.sent[-1][1]["standalone_data"], first)
+            fetcher.return_value.crawl_websites.assert_called_once()
+            self.assertEqual(len(self.sent), 3)
+            self.run_at("2026-09-19T08:45")
+            self.assertEqual(len(self.sent), 3)
+        html = Path("output/html/briefings/2026-09-19_08-00.html").read_text(encoding="utf-8")
+        self.assertIn("榜单新闻30", html)
+
+    def test_standalone_failure_preserves_pending(self):
+        self.config["DISPLAY"]["REGIONS"]["STANDALONE"] = True
+        self.run_at("2026-09-18T21:00", self.item())
+        with patch("trendradar.core.briefing.DataFetcher") as fetcher:
+            fetcher.return_value.crawl_websites.return_value = ({}, {}, ["cls-hot"])
+            with self.assertRaisesRegex(RuntimeError, "独立热榜获取失败"):
+                self.run_at("2026-09-19T08:00")
+        self.assertTrue(self.state()["pending"])
+        self.assertIsNone(self.state()["lease"])
+        self.assertFalse(self.sent)
 
     def test_main_routes_briefing_without_old_pipeline(self):
         from trendradar.__main__ import NewsAnalyzer
