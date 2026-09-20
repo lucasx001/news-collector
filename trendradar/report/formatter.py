@@ -7,7 +7,12 @@
 
 from typing import Dict
 
-from trendradar.report.helpers import clean_title, html_escape, format_rank_display
+from trendradar.report.helpers import (
+    clean_title,
+    html_escape,
+    format_rank_display,
+    preferred_news_url,
+)
 
 
 def format_title_for_platform(
@@ -35,7 +40,7 @@ def format_title_for_platform(
             - ranks: 排名列表
             - rank_threshold: 高亮阈值
             - url: PC端链接
-            - mobile_url: 移动端链接（优先使用）
+            - mobile_url: 移动端链接（财联社来源优先使用网页详情页）
             - is_new: 是否为新增标题（可选）
             - matched_keyword: 匹配的关键词（可选，platform 模式使用）
         show_source: 是否显示来源名称（keyword 模式使用）
@@ -48,7 +53,7 @@ def format_title_for_platform(
         title_data["ranks"], title_data["rank_threshold"], platform
     )
 
-    link_url = title_data["mobile_url"] or title_data["url"]
+    link_url = preferred_news_url(title_data)
     cleaned_title = clean_title(title_data["title"])
     if not cleaned_title:
         cleaned_title = link_url or title_data["url"] or ""
@@ -212,7 +217,7 @@ def format_title_for_platform(
             title_data["ranks"], title_data["rank_threshold"], "html"
         )
 
-        link_url = title_data["mobile_url"] or title_data["url"]
+        link_url = preferred_news_url(title_data)
 
         escaped_title = html_escape(cleaned_title)
         escaped_source_name = html_escape(title_data["source_name"])

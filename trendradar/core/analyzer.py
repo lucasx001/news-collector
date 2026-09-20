@@ -346,6 +346,7 @@ def count_word_frequency(
                 word_stats[group_key]["titles"][source_id].append(
                     {
                         "title": title,
+                        "source_id": source_id,
                         "source_name": source_name,
                         "first_time": first_time,
                         "last_time": last_time,

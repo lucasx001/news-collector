@@ -18,10 +18,43 @@ from trendradar.storage.local import LocalStorageBackend
 from trendradar.storage.base import NewsData, NewsItem
 from trendradar.ai.filter import AIFilter
 from trendradar.ai import AIAnalysisResult
+from trendradar.report.formatter import format_title_for_platform
+from trendradar.report.helpers import preferred_news_url
 
 
 ROOT = Path(__file__).resolve().parents[1]
 TZ = timezone(timedelta(hours=8))
+
+
+class NewsLinkTests(unittest.TestCase):
+    def test_cls_prefers_web_detail_over_app_share_url(self):
+        title_data = {
+            "title": "财联社测试新闻",
+            "source_id": "cls-telegraph",
+            "source_name": "财联社电报",
+            "url": "https://www.cls.cn/detail/123456",
+            "mobile_url": "https://api3.cls.cn/share/subject/123456?os=web&sv=859",
+            "ranks": [1],
+            "rank_threshold": 5,
+            "time_display": "08:00",
+            "count": 1,
+        }
+
+        self.assertEqual(preferred_news_url(title_data), title_data["url"])
+        formatted = format_title_for_platform("wework", title_data)
+        self.assertIn(title_data["url"], formatted)
+        self.assertNotIn(title_data["mobile_url"], formatted)
+
+    def test_other_sources_keep_mobile_url_priority(self):
+        title_data = {
+            "title": "普通来源测试新闻",
+            "source_id": "thepaper",
+            "source_name": "澎湃新闻",
+            "url": "https://example.com/desktop",
+            "mobile_url": "https://example.com/mobile",
+        }
+
+        self.assertEqual(preferred_news_url(title_data), title_data["mobile_url"])
 
 
 class BriefingTests(unittest.TestCase):

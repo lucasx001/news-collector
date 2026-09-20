@@ -1052,6 +1052,7 @@ class AppContext:
 
                 title_entry = {
                     "title": item.get("title", ""),
+                    "source_id": item.get("source_id", ""),
                     "source_name": item.get("source_name", ""),
                     "url": item.get("url", ""),
                     "mobile_url": item.get("mobile_url", ""),

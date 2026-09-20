@@ -80,6 +80,7 @@ def prepare_report_data(
 
                     processed_title = {
                         "title": title,
+                        "source_id": source_id,
                         "source_name": source_name,
                         "time_display": "",
                         "count": 1,
@@ -109,13 +110,14 @@ def prepare_report_data(
         for title_data in stat["titles"]:
             processed_title = {
                 "title": title_data["title"],
+                "source_id": title_data.get("source_id", ""),
                 "source_name": title_data["source_name"],
                 "time_display": title_data["time_display"],
                 "count": title_data["count"],
                 "ranks": title_data["ranks"],
                 "rank_threshold": title_data["rank_threshold"],
                 "url": title_data.get("url", ""),
-                "mobile_url": title_data.get("mobileUrl", ""),
+                "mobile_url": title_data.get("mobileUrl") or title_data.get("mobile_url", ""),
                 "is_new": title_data.get("is_new", False),
             }
             processed_titles.append(processed_title)

@@ -6,7 +6,35 @@
 """
 
 import re
-from typing import List
+from typing import Dict, List
+
+
+_CLS_SOURCE_IDS = {"cls", "cls-hot", "cls-telegraph", "cls-depth"}
+
+
+def preferred_news_url(title_data: Dict) -> str:
+    """选择新闻详情链接。
+
+    NewsNow 为财联社同时返回网页详情页和 App 分享页。财联社的分享页
+    可能提示升级 App，网页详情页更适合企业微信和浏览器打开；其他来源
+    继续沿用移动端链接优先的历史行为。
+    """
+    url = str(title_data.get("url") or "").strip()
+    mobile_url = str(
+        title_data.get("mobile_url") or title_data.get("mobileUrl") or ""
+    ).strip()
+    source_id = str(title_data.get("source_id") or "").strip().lower()
+    source_name = str(title_data.get("source_name") or "").strip()
+
+    is_cls = (
+        source_id in _CLS_SOURCE_IDS
+        or source_id.startswith("cls-")
+        or "财联社" in source_name
+        or "api3.cls.cn" in mobile_url.lower()
+    )
+    if is_cls:
+        return url or mobile_url
+    return mobile_url or url
 
 
 def clean_title(title: str) -> str:

@@ -17,6 +17,7 @@ from trendradar.report.helpers import (
     clean_title,
     html_escape,
     format_rank_display,
+    preferred_news_url,
 )
 from trendradar.report.formatter import format_title_for_platform
 from trendradar.report.html import render_html_content
@@ -30,6 +31,7 @@ __all__ = [
     "clean_title",
     "html_escape",
     "format_rank_display",
+    "preferred_news_url",
     # 格式化函数
     "format_title_for_platform",
     # HTML 渲染

@@ -8,7 +8,7 @@ HTML 报告渲染模块
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Callable
 
-from trendradar.report.helpers import html_escape
+from trendradar.report.helpers import html_escape, preferred_news_url
 from trendradar.utils.time import convert_time_for_display
 from trendradar.ai.formatter import render_ai_analysis_html_rich
 
@@ -1433,7 +1433,7 @@ def render_html_content(
 
                 # 处理标题和链接
                 escaped_title = html_escape(title_data["title"])
-                link_url = title_data.get("mobile_url") or title_data.get("url", "")
+                link_url = preferred_news_url(title_data)
 
                 if link_url:
                     escaped_url = html_escape(link_url)
@@ -1500,7 +1500,7 @@ def render_html_content(
 
                 # 处理新增新闻的链接
                 escaped_title = html_escape(title_data["title"])
-                link_url = title_data.get("mobile_url") or title_data.get("url", "")
+                link_url = preferred_news_url(title_data)
 
                 if link_url:
                     escaped_url = html_escape(link_url)
