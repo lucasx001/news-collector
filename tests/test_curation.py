@@ -47,3 +47,16 @@ class CurationTests(unittest.TestCase):
     def test_invalid_limits(self):
         with self.assertRaises(ValueError):
             curate_stats(self.stats, self.selector, per_topic=0)
+
+    def test_unlimited_total_preserves_all_topics_across_batches(self):
+        stats = [{"word": str(topic), "titles": [{"title": f"{topic}-{i}"}
+                 for i in range(100)]} for topic in range(4)]
+        def choose(messages, **kwargs):
+            self.assertIn("所有主题合计不设条数上限", messages[0]["content"])
+            batch = json.loads(messages[-1]["content"])
+            return json.dumps({"selected_ids": [item["id"] for item in batch]})
+        self.selector.client.chat.side_effect = choose
+        result = curate_stats(stats, self.selector)
+        self.assertEqual([group["count"] for group in result], [5, 5, 5, 5])
+        self.assertEqual(sum(group["count"] for group in result), 20)
+        self.assertEqual(self.selector.client.chat.call_count, 3)

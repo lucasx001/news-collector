@@ -249,8 +249,8 @@ class BriefingRunner:
                 selector = AIFilter(self.config["AI"], self.ctx.ai_filter_config, self.ctx.get_time)
                 flight["stats"] = curate_stats(
                     flight["stats"], selector,
-                    per_topic=curated.get("max_per_topic", 2),
-                    total=curated.get("max_total", 12), heartbeat=self._save,
+                    per_topic=curated.get("max_per_topic", 5),
+                    total=curated.get("max_total", 0), heartbeat=self._save,
                 )
                 flight["analysis"] = None
                 flight["curated"] = True
