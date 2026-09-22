@@ -1,5 +1,7 @@
 import json
+import io
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import Mock
 
 from trendradar.ai.curation import curate_stats
@@ -33,6 +35,43 @@ class CurationTests(unittest.TestCase):
     def test_empty_selection_is_allowed(self):
         self.selector.client.chat.return_value = '{"selected_ids":[]}'
         self.assertEqual(curate_stats(self.stats, self.selector), [])
+
+    def test_failure_logs_identify_response_problem_and_preserve_input(self):
+        cases = [
+            ('', '未提取到非空JSON'),
+            ('bad', 'JSON解析失败'),
+            ('[]', 'JSON顶层必须为对象'),
+            ('{}', '缺少selected_ids字段'),
+            ('{"selected_ids":null}', 'selected_ids必须为数组'),
+            ('{"selected_ids":["0",true,{}]}', 'ID必须为整数'),
+            ('{"selected_ids":[99]}', 'ID不在本批候选中'),
+            ('{"selected_ids":[0,0]}', 'ID重复'),
+        ]
+        original = json.dumps(self.stats)
+        for response, reason in cases:
+            with self.subTest(response=response):
+                self.selector.client.chat.return_value = response
+                output = io.StringIO()
+                with redirect_stdout(output), self.assertRaises(ValueError):
+                    curate_stats(self.stats, self.selector)
+                log = output.getvalue()
+                self.assertIn(reason, log)
+                self.assertIn('[简报精选][请求1]', log)
+                self.assertIn('AI原始响应摘要=', log)
+                self.assertIn('提取JSON摘要=', log)
+                self.assertEqual(json.dumps(self.stats), original)
+
+    def test_response_preview_is_bounded_and_escapes_newlines(self):
+        self.selector.client.chat.return_value = 'bad\n' + 'x' * 10000
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(ValueError):
+            curate_stats(self.stats, self.selector)
+        previews = [line for line in output.getvalue().splitlines() if '摘要=' in line]
+        self.assertEqual(len(previews), 2)
+        for line in previews:
+            self.assertIn('bad\\n', line)
+            self.assertIn('已截断', line)
+            self.assertLess(len(line), 1600)
 
     def test_later_batches_compete_in_final_selection(self):
         stats = [{"word": "科技", "titles": [{"title": str(i)} for i in range(401)]}]
