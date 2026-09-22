@@ -27,7 +27,7 @@ class CurationTests(unittest.TestCase):
 
     def test_invalid_responses_fail_closed(self):
         for response in ['{}', '[]', '{"selected_ids":[99]}',
-                         '{"selected_ids":[0,0]}', '{"selected_ids":[true]}', 'bad']:
+                         '{"selected_ids":[true]}', 'bad']:
             with self.subTest(response=response), self.assertRaises(ValueError):
                 self.selector.client.chat.return_value = response
                 curate_stats(self.stats, self.selector)
@@ -45,7 +45,6 @@ class CurationTests(unittest.TestCase):
             ('{"selected_ids":null}', 'selected_ids必须为数组'),
             ('{"selected_ids":["0",true,{}]}', 'ID必须为整数'),
             ('{"selected_ids":[99]}', 'ID不在本批候选中'),
-            ('{"selected_ids":[0,0]}', 'ID重复'),
         ]
         original = json.dumps(self.stats)
         for response, reason in cases:
@@ -72,6 +71,50 @@ class CurationTests(unittest.TestCase):
             self.assertIn('bad\\n', line)
             self.assertIn('已截断', line)
             self.assertLess(len(line), 1600)
+
+    def test_railway_response_uses_corrected_final_json(self):
+        first = [24, 28, 46, 12, 158, 161, 162, 176, 159, 184, 174, 186,
+                 107, 143, 160, 163, 194, 196, 175, 178, 128, 151, 47,
+                 107, 11, 14, 34, 6, 18, 5, 44, 39, 20, 57, 140, 146]
+        final = list(dict.fromkeys(first))
+        self.selector.client.chat.return_value = (
+            json.dumps({"selected_ids": first}) +
+            '\n\nWait, I need to strictly output only JSON with selected_ids. '
+            'Let me finalize carefully, ensuring IDs are valid and deduplicated, '
+            'ranked by investment info value.\n\n' +
+            json.dumps({"selected_ids": final}))
+        stats = [{"word": "主题", "titles": [{"title": str(i)} for i in range(200)]}]
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = curate_stats(stats, self.selector)
+        self.assertEqual([t['title'] for t in result[0]['titles']], ['24', '28', '46', '12', '158'])
+        self.assertIn('检测到2份精选JSON', output.getvalue())
+
+    def test_last_answer_replaces_draft_even_when_ranking_changes(self):
+        self.selector.client.chat.return_value = (
+            '```json\n{"selected_ids":[0,1]}\n```\nCorrection:\n'
+            '```json\n{"selected_ids":[5,4]}\n```')
+        result = curate_stats(self.stats, self.selector)
+        self.assertEqual([t['title'] for t in result[0]['titles']], ['新闻5', '新闻4'])
+
+    def test_duplicate_ids_do_not_consume_topic_quota(self):
+        self.selector.client.chat.return_value = '{"selected_ids":[2,2,1,0]}'
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = curate_stats(self.stats, self.selector, per_topic=2)
+        self.assertEqual([t['title'] for t in result[0]['titles']], ['新闻2', '新闻1'])
+        self.assertIn('重复ID已按首次出现顺序去重', output.getvalue())
+
+    def test_invalid_final_answer_is_not_replaced_with_valid_draft(self):
+        for final in ['{"selected_ids":[99]}', '{"selected_ids":[true]}',
+                      '{"selected_ids":null}']:
+            with self.subTest(final=final), self.assertRaises(ValueError):
+                self.selector.client.chat.return_value = '{"selected_ids":[0]}\n' + final
+                curate_stats(self.stats, self.selector)
+
+    def test_explicit_empty_final_answer_overrides_draft(self):
+        self.selector.client.chat.return_value = '{"selected_ids":[0]}\n{"selected_ids":[]}'
+        self.assertEqual(curate_stats(self.stats, self.selector), [])
 
     def test_later_batches_compete_in_final_selection(self):
         stats = [{"word": "科技", "titles": [{"title": str(i)} for i in range(401)]}]
