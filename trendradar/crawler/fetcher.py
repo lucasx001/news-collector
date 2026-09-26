@@ -14,6 +14,7 @@ import random
 import time
 from typing import Dict, List, Tuple, Optional, Union
 
+import feedparser
 import requests
 
 
@@ -22,6 +23,7 @@ class DataFetcher:
 
     # 默认 API 地址
     DEFAULT_API_URL = "https://newsnow.busiyi.world/api/s"
+    KR36_QUICK_FEED_URL = "https://www.36kr.com/feed-newsflash"
 
     # 默认请求头
     DEFAULT_HEADERS = {
@@ -72,7 +74,13 @@ class DataFetcher:
             id_value = id_info
             alias = id_value
 
-        url = f"{self.api_url}?id={id_value}&latest"
+        # NewsNow's Cloudflare deployment disables 36kr-quick. Keep the source
+        # ID stable for storage and briefing deduplication, using 36kr's own feed.
+        is_36kr_quick = id_value == "36kr-quick"
+        url = (
+            self.KR36_QUICK_FEED_URL
+            if is_36kr_quick else f"{self.api_url}?id={id_value}&latest"
+        )
 
         proxies = None
         if self.proxy_url:
@@ -89,8 +97,23 @@ class DataFetcher:
                 )
                 response.raise_for_status()
 
-                data_text = response.text
-                data_json = json.loads(data_text)
+                if is_36kr_quick:
+                    feed = feedparser.parse(response.content)
+                    items = [
+                        {
+                            "title": entry.get("title", "").strip(),
+                            "url": entry.get("link", "").strip(),
+                        }
+                        for entry in feed.entries
+                        if entry.get("title", "").strip() and entry.get("link", "").strip()
+                    ]
+                    if not items:
+                        raise ValueError("36氪官方快讯 RSS 没有有效新闻")
+                    data_json = {"status": "success", "id": id_value, "items": items}
+                    data_text = json.dumps(data_json, ensure_ascii=False)
+                else:
+                    data_text = response.text
+                    data_json = json.loads(data_text)
 
                 status = data_json.get("status", "未知")
                 if status not in ["success", "cache"]:

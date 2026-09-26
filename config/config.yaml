@@ -71,7 +71,7 @@ platforms:
       name: "澎湃新闻"
     - id: "ithome"
       name: "IT之家"
-    - id: "36kr-quick"
+    - id: "36kr-quick" # 从 36氪官方快讯 RSS 抓取；NewsNow 的 Cloudflare 服务禁用了此源
       name: "36氪快讯"
 
 # ===============================================================

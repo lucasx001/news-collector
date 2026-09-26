@@ -2,7 +2,7 @@
 
 ## 当前行为
 
-- 来源：`cls-telegraph`、`cls-depth`、`wallstreetcn-news`、`gelonghui`、`thepaper`、`ithome`、`36kr-quick`。华尔街见闻使用文章源，保留财联社深度和重大突发快讯。
+- 来源：`cls-telegraph`、`cls-depth`、`wallstreetcn-news`、`gelonghui`、`thepaper`、`ithome`、`36kr-quick`。其中 36氪快讯改从 36氪官方 RSS（`https://www.36kr.com/feed-newsflash`）读取，保留原来源 ID 与简报去重记录；其余来源仍经 NewsNow。华尔街见闻使用文章源，保留财联社深度和重大突发快讯。
 - AI 分类后再按信息价值精选：每主题最多 5 条，所有主题合计不限（`max_total: 0`），宁缺毋滥；候选过多时分批初选，再对入围新闻统一比较。筛选基于标题和来源，不抓取文章全文，深度来源也不保证每条均为深度报道。
 - 精选开关及上限为 `briefing.curation_enabled/max_per_topic/max_total`。AI 总结目标为 400 字以内、最多 3 条主线；字数由提示词约束，新闻条数由代码强制限制。
 - 未入选新闻在本次简报成功处理后记为已处理，不在下一份重复堆积。精选失败保留原快照重试。升级后尚未发送的旧快照会重新精选；已有接收方成功收取的快照维持原内容，保证失败重试的一致性。
@@ -41,7 +41,7 @@ Railway 继续使用 `docker/Dockerfile`，部署代码后保持 `RUN_MODE=cron`
 
 R2 需允许读取及写入 `state/`；新的简报 HTML 同时保存到 `html/briefings/YYYY-MM-DD_HH-MM.html`。容器本地报告位于 `output/html/briefings/`，最新报告入口仍为 `output/index.html`。
 
-新闻源 ID 来自现有 NewsNow 接口；源出现在上游列表不保证每个部署环境都能访问。部署后检查各来源成功/失败日志。本次开发环境访问聚合 API 返回 HTTP 403，未用真实 AI、通知或 R2 凭据执行线上验证。
+除 36氪快讯外，其余新闻源通过 NewsNow 接口抓取；源出现在 NewsNow 列表不保证其公共 Cloudflare 服务可用。部署后检查各来源成功/失败日志，尤其确认 `36kr-quick` 从官方 RSS 成功获取。在线推送与 R2 状态仍需以 Railway 日志和实际接收结果核验。
 
 回退原流程：关闭 `briefing.enabled`，再按需要恢复旧的 schedule、RSS、展示配置；保留简报状态供将来恢复使用。
 
