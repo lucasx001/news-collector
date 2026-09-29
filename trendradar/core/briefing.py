@@ -8,7 +8,7 @@ import copy
 import hashlib
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -85,7 +85,7 @@ def notification_targets(config):
 
 
 class BriefingRunner:
-    def __init__(self, analyzer):
+    def __init__(self, analyzer, manual=False):
         self.analyzer = analyzer
         self.ctx = analyzer.ctx
         self.config = self.ctx.config
@@ -101,6 +101,8 @@ class BriefingRunner:
             raise ValueError("当前 briefing 模式仅处理平台新闻，请关闭 rss.enabled")
         self.owner = uuid.uuid4().hex
         self.state = None
+        self.manual = manual
+        self.manual_outside = False
 
     def _save(self, release=False):
         self.state["lease"] = None if release else {
@@ -190,6 +192,10 @@ class BriefingRunner:
     def run(self):
         now = self.ctx.get_time()
         schedule = self.scheduler.resolve()
+        self.manual_outside = self.manual and not schedule.push
+        if self.manual_outside:
+            schedule = replace(schedule, analyze=True, push=True, period_name="手动简报")
+            print("[简报] 手动运行：本次允许在推送窗口外处理待发简报")
         cutoffs = self._cutoffs(now)
         self.state = self.store.load()
         fresh = self.state is None
@@ -214,7 +220,9 @@ class BriefingRunner:
             if not schedule.push or not self.config["ENABLE_NOTIFICATION"]:
                 print("[简报] 静默采集完成，不调用 AI、不生成报告、不推送")
                 return
-            cutoff = cutoffs[-1]
+            cutoff = (datetime.fromisoformat(self.state["flight"]["cutoff"])
+                      if self.manual_outside and self.state["flight"]
+                      else now if self.manual_outside else cutoffs[-1])
             slot = cutoff.isoformat()
             if self.state["last_slot"] == slot:
                 print("[简报] 当前时段已完成推送")
@@ -224,9 +232,12 @@ class BriefingRunner:
                 print("[简报] 未配置通知渠道，保留待推送新闻")
                 return
             if self.state["flight"] is None:
-                standalone = self._standalone_snapshot()
                 keys = [key for key, item in self.state["pending"].items()
                         if datetime.fromisoformat(item["first_seen"]) <= cutoff]
+                if self.manual_outside and not keys:
+                    print("[简报] 本次手动运行没有待推送新闻")
+                    return
+                standalone = self._standalone_snapshot()
                 if not keys and not standalone:
                     print("[简报] 本时段没有新增新闻")
                     return
@@ -392,10 +403,11 @@ class BriefingRunner:
                 continue
             self._save()
             # Stop retries outside the configured window, including long model calls.
-            current = self.scheduler.resolve()
-            if not current.push or current.period_key != schedule.period_key:
-                print("[简报] 推送窗口已结束，保留报告至下一窗口")
-                return
+            if not self.manual_outside:
+                current = self.scheduler.resolve()
+                if not current.push or current.period_key != schedule.period_key:
+                    print("[简报] 推送窗口已结束，保留报告至下一窗口")
+                    return
             dispatcher = NotificationDispatcher(isolated, self.ctx.get_time, self.ctx.split_content)
             results = dispatcher.dispatch_all(
                 report_data=report_data, report_type=flight["label"], mode="daily",

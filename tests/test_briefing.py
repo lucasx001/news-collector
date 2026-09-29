@@ -105,10 +105,10 @@ class BriefingTests(unittest.TestCase):
     def build_stats(runner, items):
         return [{"word": "科技", "count": len(items), "titles": [runner._title(i) for i in items]}]
 
-    def run_at(self, stamp, results=None):
+    def run_at(self, stamp, results=None, manual=False):
         self.now = datetime.fromisoformat(stamp).replace(tzinfo=TZ)
         self.results = results or {}
-        BriefingRunner(self.analyzer).run()
+        BriefingRunner(self.analyzer, manual=manual).run()
 
     def item(self, title="芯片新闻", url="https://example.com/1", source="a"):
         return {source: {title: {"url": url, "ranks": [1]}}}
@@ -163,6 +163,27 @@ class BriefingTests(unittest.TestCase):
         self.assertEqual(len(self.sent), 2)
         self.assertTrue(self.state()["pending"])
         self.assertFalse(self.state()["seen"])
+
+    def test_manual_run_outside_window_sends_pending_once(self):
+        self.run_at("2026-09-18T21:00", self.item())
+        self.run_at("2026-09-19T11:00", manual=True)
+        self.assertEqual(len(self.sent), 2)
+        self.assertIn("手动简报", self.sent[0][1]["report_type"])
+        self.assertEqual(self.titles(self.sent[0]), ["芯片新闻"])
+        self.assertIsNone(self.state()["flight"])
+        self.run_at("2026-09-19T11:01", manual=True)
+        self.assertEqual(len(self.sent), 2)
+
+    def test_manual_run_retries_failed_flight_after_window(self):
+        self.build.side_effect = RuntimeError("AI unavailable")
+        self.run_at("2026-09-18T21:00", self.item())
+        with self.assertRaisesRegex(RuntimeError, "AI unavailable"):
+            self.run_at("2026-09-19T08:00")
+        self.build.side_effect = self.build_stats
+        self.run_at("2026-09-19T11:00", manual=True)
+        self.assertEqual(len(self.sent), 2)
+        self.assertIn("早间简报", self.sent[0][1]["report_type"])
+        self.assertIsNone(self.state()["flight"])
 
     def test_ai_failure_does_not_consume_news(self):
         self.build.side_effect = RuntimeError("AI unavailable")
@@ -324,8 +345,14 @@ class BriefingTests(unittest.TestCase):
         analyzer._crawl_data = Mock(side_effect=AssertionError("old pipeline"))
         with patch("trendradar.core.briefing.BriefingRunner") as runner:
             NewsAnalyzer.run(analyzer)
-            runner.assert_called_once_with(analyzer)
+            runner.assert_called_once_with(analyzer, manual=False)
             runner.return_value.run.assert_called_once()
+            analyzer.ctx.cleanup.assert_called_once()
+
+        analyzer.ctx.cleanup.reset_mock()
+        with patch("trendradar.core.briefing.BriefingRunner") as runner:
+            NewsAnalyzer.run(analyzer, manual_briefing=True)
+            runner.assert_called_once_with(analyzer, manual=True)
             analyzer.ctx.cleanup.assert_called_once()
 
     def test_remote_fallback_is_rejected(self):

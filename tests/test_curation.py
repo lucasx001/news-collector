@@ -120,6 +120,27 @@ class CurationTests(unittest.TestCase):
         self.assertEqual([t['title'] for t in result[0]['titles']], ['新闻2', '新闻1'])
         self.assertIn('重复ID已按首次出现顺序去重', output.getvalue())
 
+    def test_valid_ids_survive_unavailable_final_batch_ids(self):
+        self.selector.client.chat.return_value = (
+            '{"selected_ids":[5,4,99,4,3,100]}')
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = curate_stats(self.stats, self.selector)
+        self.assertEqual([t['title'] for g in result for t in g['titles']],
+                         ['新闻5', '新闻4', '新闻3'])
+        self.assertIn('忽略非本批候选ID：[99, 100]', output.getvalue())
+        self.assertIn('重复ID已按首次出现顺序去重：[4]', output.getvalue())
+
+    def test_mixed_invalid_type_still_fails_closed(self):
+        self.selector.client.chat.return_value = '{"selected_ids":[5,99,true]}'
+        with self.assertRaises(ValueError):
+            curate_stats(self.stats, self.selector)
+
+    def test_mostly_unavailable_ids_still_fail_closed(self):
+        self.selector.client.chat.return_value = '{"selected_ids":[5,99,100,101]}'
+        with self.assertRaises(ValueError):
+            curate_stats(self.stats, self.selector)
+
     def test_invalid_final_answer_is_not_replaced_with_valid_draft(self):
         for final in ['{"selected_ids":[99]}', '{"selected_ids":[true]}',
                       '{"selected_ids":null}', '{"selected_ids":[99]',

@@ -1709,7 +1709,7 @@ class NewsAnalyzer:
 
         return html_file
 
-    def run(self) -> None:
+    def run(self, manual_briefing: bool = False) -> None:
         """执行分析流程"""
         try:
             if not self._initialize_and_check_config():
@@ -1717,8 +1717,11 @@ class NewsAnalyzer:
 
             if self.ctx.config.get("BRIEFING", {}).get("enabled", False):
                 from trendradar.core.briefing import BriefingRunner
-                BriefingRunner(self).run()
+                BriefingRunner(self, manual=manual_briefing).run()
                 return
+
+            if manual_briefing:
+                raise ValueError("--briefing-now 仅适用于已启用的简报模式")
 
             mode_strategy = self._get_mode_strategy()
 
@@ -1737,7 +1740,9 @@ class NewsAnalyzer:
 
         except Exception as e:
             print(f"分析流程执行出错: {e}")
-            if self.ctx.config.get("DEBUG", False) or self.ctx.config.get("BRIEFING", {}).get("enabled", False):
+            if (self.ctx.config.get("DEBUG", False)
+                    or self.ctx.config.get("BRIEFING", {}).get("enabled", False)
+                    or manual_briefing):
                 raise
         finally:
             # 清理资源（包括过期数据清理和数据库连接关闭）
@@ -2159,12 +2164,14 @@ def main():
 诊断命令:
   --doctor               运行环境与配置体检
   --test-notification    发送测试通知到已配置渠道
+  --briefing-now         立即运行一次待发简报（沿用接收回执）
 
 示例:
   python -m trendradar                    # 正常运行
   python -m trendradar --show-schedule    # 查看当前调度状态
   python -m trendradar --doctor           # 运行一键体检
   python -m trendradar --test-notification # 测试通知渠道连通性
+  python -m trendradar --briefing-now      # 手动采集并推送待发简报
 """
     )
     parser.add_argument(
@@ -2181,6 +2188,11 @@ def main():
         "--test-notification",
         action="store_true",
         help="发送测试通知到已配置渠道"
+    )
+    parser.add_argument(
+        "--briefing-now",
+        action="store_true",
+        help="立即采集并处理一次待发简报，窗口外也可推送"
     )
 
     args = parser.parse_args()
@@ -2230,7 +2242,7 @@ def main():
 
         # 获取 debug 配置
         debug_mode = analyzer.ctx.config.get("DEBUG", False)
-        analyzer.run()
+        analyzer.run(manual_briefing=args.briefing_now)
     except FileNotFoundError as e:
         print(f"❌ 配置文件错误: {e}")
         print("\n请确保以下文件存在:")
