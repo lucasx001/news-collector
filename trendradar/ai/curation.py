@@ -1,6 +1,7 @@
 """Select a small, globally ranked briefing from classified headline candidates."""
 
 import json
+import re
 import time
 
 
@@ -11,7 +12,7 @@ def _preview(value, limit=1500):
 
 
 def _selection_jsons(response):
-    """Read complete JSON values, without treating nested objects as final answers."""
+    """Read selection objects, including one missing only its final brace."""
     decoder = json.JSONDecoder()
     results = []
     index = 0
@@ -22,6 +23,18 @@ def _selection_jsons(response):
         try:
             value, end = decoder.raw_decode(response, index)
         except json.JSONDecodeError:
+            tail = response[index:].strip()
+            if re.match(r'\{\s*"selected_ids"\s*:', tail):
+                # A model can finish the array but omit the outer object's final }.
+                # Keep other malformed final answers so they fail validation instead
+                # of silently falling back to an earlier draft or the inner array.
+                repaired = tail + "}" if tail.endswith("]") else tail
+                try:
+                    json.loads(repaired)
+                except json.JSONDecodeError:
+                    results.append(tail)
+                else:
+                    results.append(repaired)
             index += 1
             continue
         if isinstance(value, dict) and "selected_ids" in value:
@@ -85,7 +98,7 @@ def curate_stats(stats, selector, per_topic=5, total=0, heartbeat=lambda: None):
         selections = _selection_jsons(response)
         raw = selections[-1] if selections else selector._extract_json(response)
         if len(selections) > 1:
-            print(f"{prefix} 检测到{len(selections)}份精选JSON，使用最后一份完整结果")
+            print(f"{prefix} 检测到{len(selections)}份精选响应，校验最后一份")
 
         def log_failure(reason):
             print(f"{prefix} 校验失败：{reason}")

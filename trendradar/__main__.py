@@ -2237,10 +2237,12 @@ def main():
         print("  • config/config.yaml")
         print("  • config/frequency_words.txt")
         print("\n参考项目文档进行正确配置")
+        raise SystemExit(1)
     except Exception as e:
         print(f"❌ 程序运行错误: {e}")
         if debug_mode:
             raise
+        raise SystemExit(1)
 
 
 def _handle_status_commands(config: Dict) -> None:

@@ -4,7 +4,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import Mock
 
-from trendradar.ai.curation import curate_stats
+from trendradar.ai.curation import _selection_jsons, curate_stats
 from trendradar.ai.filter import AIFilter
 
 
@@ -88,7 +88,22 @@ class CurationTests(unittest.TestCase):
         with redirect_stdout(output):
             result = curate_stats(stats, self.selector)
         self.assertEqual([t['title'] for t in result[0]['titles']], ['24', '28', '46', '12', '158'])
-        self.assertIn('检测到2份精选JSON', output.getvalue())
+        self.assertIn('检测到2份精选响应，校验最后一份', output.getvalue())
+
+    def test_railway_response_missing_only_outer_closing_brace(self):
+        response = ('{"selected_ids": [203, 222, 236, 244, 248, 263, 247, 264, '
+                    '245, 262, 246, 251, 200, 332, 331, 336, 339, 289, 308, '
+                    '293, 327, 330, 268, 322, 328, 329, 342, 348, 356, 358, '
+                    '370, 372, 374, 350, 369, 371, 344, 351, 355, 384, 379, '
+                    '364, 224, 226]')
+        self.assertEqual(len(response), 237)
+        selections = _selection_jsons(response)
+        self.assertEqual(len(selections), 1)
+        self.assertEqual(json.loads(selections[0])['selected_ids'][:3], [203, 222, 236])
+
+        self.selector.client.chat.return_value = '{"selected_ids":[5,4]'
+        result = curate_stats(self.stats, self.selector)
+        self.assertEqual([t['title'] for t in result[0]['titles']], ['新闻5', '新闻4'])
 
     def test_last_answer_replaces_draft_even_when_ranking_changes(self):
         self.selector.client.chat.return_value = (
@@ -107,7 +122,8 @@ class CurationTests(unittest.TestCase):
 
     def test_invalid_final_answer_is_not_replaced_with_valid_draft(self):
         for final in ['{"selected_ids":[99]}', '{"selected_ids":[true]}',
-                      '{"selected_ids":null}']:
+                      '{"selected_ids":null}', '{"selected_ids":[99]',
+                      '{"selected_ids":[0']:
             with self.subTest(final=final), self.assertRaises(ValueError):
                 self.selector.client.chat.return_value = '{"selected_ids":[0]}\n' + final
                 curate_stats(self.stats, self.selector)
